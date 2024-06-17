@@ -1,0 +1,23 @@
+name: 'Dependency Review'
+
+on: [pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🏁 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🔬 Dependency Review
+        uses: actions/dependency-review-action@v3
+        with:
+          fail-on-severity: high
+          allow-dependencies-licenses: 'pkg:pypi/structlog, pkg:pypi/pathspec, pkg:pypi/fonttools, pkg:pypi/pillow'
+          # license abbreviations can be found here:
+          # # https://spdx.org/licenses/
+          # follows our open source policy
+          allow-licenses: AFL-2.1, Apache-1.0, Apache-2.0, BSD-1-Clause, BSD-2-Clause, BSD-3-Clause, CC0-1.0, HPND, ISC, MIT, PSF-2.0, Python-2.0, Python-2.0.1, Unlicense, BSD-2-Clause AND BSD-3-Clause, Apache-2.0 AND MIT, MIT AND Python-2.0, MIT AND PSF-2.0, MIT AND MPL-2.0, MPL-2.0, BSD-3-Clause AND MIT, BSD-2-Clause AND ISC
