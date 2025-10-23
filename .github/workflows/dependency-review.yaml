@@ -16,7 +16,7 @@ jobs:
         uses: actions/dependency-review-action@v3
         with:
           fail-on-severity: high
-          allow-dependencies-licenses: 'pkg:pypi/structlog, pkg:pypi/pathspec, pkg:pypi/fonttools, pkg:pypi/pillow'
+          allow-dependencies-licenses: 'pkg:pypi/structlog, pkg:pypi/pathspec, pkg:pypi/fonttools, pkg:pypi/pillow, pkg:pypi/darts'
           # license abbreviations can be found here:
           # # https://spdx.org/licenses/
           # follows our open source policy
