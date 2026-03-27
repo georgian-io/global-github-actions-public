@@ -1,0 +1,92 @@
+name: Claude Code Review (Reusable)
+
+# Reusable workflow — call from any repo via:
+#
+#   uses: georgian-io/global-github-actions-public/.github/workflows/claude-code-review.yaml@main
+#   secrets:
+#     CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+#
+# The calling repo must have CLAUDE_CODE_OAUTH_TOKEN set as a repo or org secret.
+
+on:
+  workflow_call:
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+
+concurrency:
+  group: claude-code-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  claude-code-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+
+      - name: Get current date
+        id: date
+        run: echo "TODAY=$(date -u +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Run Claude Code Review
+        uses: anthropics/claude-code-action@df37d2f0760a4b5683a6e617c9325bc1a36443f6 # v1.0.75
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+            CURRENT DATE: ${{ steps.date.outputs.TODAY }}
+
+            Perform a comprehensive code review of this pull request.
+
+            IMPORTANT: When reviewing dates in the code or documentation, use the CURRENT DATE
+            (${{ steps.date.outputs.TODAY }}) as reference. Do not assume dates are incorrect
+            just because they appear to be in the future — verify against the current date first.
+
+            Provide a structured review with:
+            - Summary of the PR
+            - ✅ What looks good
+            - ⚠️ Warnings (non-blocking)
+            - ❌ Blocking issues (must fix)
+            - Security assessment with risk levels (🔴 Critical, 🟠 High, 🟡 Medium, 🟢 Low)
+            - Prioritized recommendations
+
+            Be specific with file paths and line numbers. Provide code examples for suggested
+            fixes when helpful.
+
+            COMMENT INSTRUCTIONS:
+            Instead of creating a new comment each time, update the existing Claude Code Review
+            comment if one exists.
+            IMPORTANT: To preserve markdown formatting, you MUST write the review to a temporary
+            file and use that file to post the comment.
+            1. Write your full review (with "<!-- claude-code-review -->" at the very beginning)
+               to a temporary file, e.g. /tmp/review.md
+            2. Search for an existing comment:
+               `gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments \
+                 --jq '.[] | select(.body | contains("<!-- claude-code-review -->")) | .id'`
+            3. If a comment ID is found, update it:
+               `gh api repos/${{ github.repository }}/issues/comments/<COMMENT_ID> -X PATCH -F body=@/tmp/review.md`
+            4. If no existing comment is found, create a new one:
+               `gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/review.md`
+            5. IMPORTANT: Always include "<!-- claude-code-review -->" at the very beginning
+               of your comment so it can be found and updated on subsequent runs.
+
+          claude_args: >-
+            --allowed-tools
+            "Read,Write,Glob,Grep,
+            Bash(gh api:*),
+            Bash(gh pr comment:*),
+            Bash(gh pr diff:*),
+            Bash(gh pr view:*),
+            Bash(git diff:*),
+            Bash(git log:*),
+            Bash(git show:*)"
