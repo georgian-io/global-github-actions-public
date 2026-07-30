@@ -1,23 +1,115 @@
-name: 'Dependency Review'
+name: Dependency Review
 
-on: [pull_request]
+on:
+  - pull_request
 
 permissions:
   contents: read
 
+# Public counterpart of terraform-infra/.github/workflows/dependency-review.yaml.
+# Keep the allow-lists below in sync with that file - it is the policy source of truth.
+#
+# Runs on GitHub-hosted runners (not Blacksmith): this workflow is required on every
+# public repository via the "Dependency Review Public" org ruleset and executes in the
+# target repository's context, where a third-party runner pool may not be installed.
 jobs:
   dependency-review:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     steps:
       - name: 🏁 Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: 🔬 Dependency Review
-        uses: actions/dependency-review-action@v3
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
         with:
           fail-on-severity: high
-          allow-dependencies-licenses: 'pkg:pypi/structlog, pkg:pypi/pathspec, pkg:pypi/fonttools, pkg:pypi/pillow, pkg:pypi/darts'
+
+          # Retry when dependency graph snapshot is not ready
+          retry-on-snapshot-warnings: true
+
+          # Packages listed here should follow PURL syntax.
+          # https://github.com/package-url/purl-spec
+          allow-dependencies-licenses: |
+            pkg:pypi/structlog,
+            pkg:pypi/pathspec,
+            pkg:pypi/fonttools,
+            pkg:pypi/pillow,
+            pkg:pypi/appnope,
+            pkg:pypi/mypy,
+            pkg:pypi/tqdm,
+            pkg:pypi/protobuf,
+            pkg:pypi/grpcio,
+            pkg:pypi/grpcio-status,
+            pkg:pypi/typing-extensions,
+            pkg:pypi/simplejson,
+            pkg:pypi/simpleeval,
+            pkg:pypi/numpy,
+            pkg:pypi/mako,
+            pkg:pypi/charset-normalizer,
+            pkg:pypi/google-api-python-client,
+            pkg:pypi/django,
+            pkg:npm/cookie-signature,
+            pkg:pypi/darts,
+            pkg:npm/hls.js,
+            pkg:npm/caniuse-lite,
+            pkg:npm/rollup,
+            pkg:pypi/grimp,
+            pkg:pypi/aiohappyeyeballs,
+            pkg:pypi/scikit-learn,
+            pkg:npm/json-schema-typed,
+            pkg:pypi/wcwidth,
+            pkg:npm/victory-vendor,
+            pkg:pypi/pycocotools,
+            pkg:pypi/pixeltable-yolox,
+            pkg:pypi/ninja,
+            pkg:pypi/lxml,
+            pkg:npm/@anthropic-ai/claude-agent-sdk,
+            pkg:npm/@anthropic-ai/claude-agent-sdk-darwin-arm64,
+            pkg:npm/@anthropic-ai/claude-agent-sdk-darwin-x64,
+            pkg:npm/@anthropic-ai/claude-agent-sdk-linux-arm64,
+            pkg:npm/@anthropic-ai/claude-agent-sdk-linux-arm64-musl,
+            pkg:npm/@anthropic-ai/claude-agent-sdk-linux-x64,
+            pkg:npm/@anthropic-ai/claude-agent-sdk-linux-x64-musl,
+            pkg:npm/@anthropic-ai/claude-agent-sdk-win32-arm64,
+            pkg:npm/@anthropic-ai/claude-agent-sdk-win32-x64,
+            pkg:npm/thread-stream
+
           # license abbreviations can be found here:
           # # https://spdx.org/licenses/
           # follows our open source policy
-          allow-licenses: AFL-2.1, Apache-1.0, Apache-2.0, BSD-1-Clause, BSD-2-Clause, BSD-3-Clause, CC0-1.0, HPND, ISC, MIT, PSF-2.0, Python-2.0, Python-2.0.1, Unlicense, BSD-2-Clause AND BSD-3-Clause, Apache-2.0 AND MIT, MIT AND Python-2.0, MIT AND PSF-2.0, MIT AND MPL-2.0, MPL-2.0, BSD-3-Clause AND MIT, BSD-2-Clause AND ISC
+          allow-licenses: |
+            AFL-2.1,
+            Apache-1.0,
+            Apache-2.0,
+            BSD-1-Clause,
+            BSD-2-Clause,
+            BSD-3-Clause,
+            CC0-1.0,
+            HPND,
+            ISC,
+            MIT,
+            MIT-0,
+            PSF-2.0,
+            Python-2.0,
+            Python-2.0.1,
+            CNRI-Python,
+            Unlicense,
+            BSD-2-Clause AND BSD-3-Clause,
+            Apache-2.0 AND MIT,
+            MIT AND Python-2.0,
+            MIT AND PSF-2.0,
+            MIT AND MPL-2.0,
+            MPL-2.0,
+            BSD-3-Clause AND MIT,
+            BSD-2-Clause AND ISC,
+            Apache-2.0 AND BSD-3-Clause,
+            BSD-1-Clause AND BSD-2-Clause,
+            BSD-3-Clause AND Unlicense,
+            Apache-2.0 AND BSD-2-Clause,
+            0BSD AND Apache-2.0 AND BSD-3-Clause AND MIT,
+            BSD-3-Clause AND CC0-1.0 AND ISC AND MIT,
+            BSD-2-Clause AND BSD-3-Clause AND ISC AND Python-2.0,
+            OFL-1.1,
+            BlueOak-1.0.0,
+            0BSD,
+            BSD-2-Clause-FreeBSD
