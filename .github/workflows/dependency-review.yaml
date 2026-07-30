@@ -9,12 +9,12 @@ permissions:
 # Public counterpart of terraform-infra/.github/workflows/dependency-review.yaml.
 # Keep the allow-lists below in sync with that file - it is the policy source of truth.
 #
-# Runs on GitHub-hosted runners (not Blacksmith): this workflow is required on every
-# public repository via the "Dependency Review Public" org ruleset and executes in the
-# target repository's context, where a third-party runner pool may not be installed.
+# Runs on an ephemeral Blacksmith runner. External-fork workflow approval is enforced
+# by GitHub before the job is dispatched, so unapproved contributors cannot consume
+# runner capacity or package-registry egress.
 jobs:
   dependency-review:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: 🏁 Checkout Repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0

@@ -19,11 +19,11 @@ permissions:
 #   * no third-party actions - public repos run with allowed_actions = "selected"
 #     and github_owned_allowed = true, so dorny/paths-filter is replaced by the
 #     same actions/github-script step that already lists the PR files;
-#   * GitHub-hosted runners only - self-hosted/third-party runner pools are not
-#     wired up on every public repo and must not run external fork code.
+#   * ephemeral Blacksmith runners - GitHub's external-fork approval gate applies
+#     before jobs are dispatched to the runner.
 jobs:
   sdlc-enforcement:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
 
     steps:
       - name: Enforce render.yaml and CODEOWNERS policy
