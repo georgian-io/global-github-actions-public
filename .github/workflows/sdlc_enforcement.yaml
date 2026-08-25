@@ -1,0 +1,81 @@
+name: SDLC Enforcement
+
+on:
+  # Allow this workflow to be required by organization rulesets
+  workflow_call:
+  # Also run on PRs in this repository
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+# Public counterpart of terraform-infra/.github/workflows/sdlc_enforcement.yaml.
+# GitHub refuses to require a workflow hosted in a repository less visible than the
+# target, so public (tier = "open-source") repositories require this copy instead.
+#
+# Two deliberate differences from the internal original:
+#   * no third-party actions - public repos run with allowed_actions = "selected"
+#     and github_owned_allowed = true, so dorny/paths-filter is replaced by the
+#     same actions/github-script step that already lists the PR files;
+#   * ephemeral Blacksmith runners - GitHub's external-fork approval gate applies
+#     before jobs are dispatched to the runner.
+jobs:
+  sdlc-enforcement:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+
+    steps:
+      - name: Enforce render.yaml and CODEOWNERS policy
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          CODEOWNERS_BYPASS_ACTORS: ${{ vars.CODEOWNERS_BYPASS_ACTORS || '["terraform-github[bot]","github-automations[bot]"]' }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const pull_number = context.payload.pull_request.number;
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number,
+              per_page: 100
+            });
+
+            const renderYamlFiles = files.filter(file => {
+              const filename = file.filename.toLowerCase();
+              return filename === 'render.yaml' || filename.endsWith('/render.yaml');
+            });
+
+            const codeownersFiles = files.filter(file =>
+              file.filename === 'CODEOWNERS' || file.filename.endsWith('/CODEOWNERS'));
+
+            const bypassActors = JSON.parse(process.env.CODEOWNERS_BYPASS_ACTORS);
+            const failures = [];
+
+            if (renderYamlFiles.length > 0) {
+              const fileList = renderYamlFiles.map(f => `- ${f.filename} (${f.status})`).join('\n');
+              failures.push(`This PR contains changes to render.yaml file(s), which is not allowed:
+            ${fileList}
+
+            Render deployments must be managed through Terraform in the terraform-infra repository.
+
+            To set up or modify Render services, see:
+            https://github.com/georgian-io/terraform-infra/tree/main/env/iac-managed-workspaces/render
+
+            Please remove the render.yaml changes from your PR.`);
+            }
+
+            if (codeownersFiles.length > 0 && !bypassActors.includes(context.actor)) {
+              failures.push(`This PR modifies CODEOWNERS, which is auto-generated from Terraform
+            (see env/iac-managed-workspaces/github in terraform-infra).
+
+            Please remove the CODEOWNERS changes from this PR and make the update through Terraform instead.`);
+            }
+
+            if (failures.length > 0) {
+              core.setFailed(failures.join('\n\n'));
+              return;
+            }
+
+            core.info('No render.yaml or CODEOWNERS changes detected. PR is allowed to proceed.');
