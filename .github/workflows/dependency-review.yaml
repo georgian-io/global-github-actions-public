@@ -29,6 +29,13 @@ jobs:
 
           # Packages listed here should follow PURL syntax.
           # https://github.com/package-url/purl-spec
+          #
+          # The pypi/cuda-bindings and pypi/nvidia-* entries are NVIDIA CUDA runtime
+          # wheels. Their licence is genuinely proprietary (NVIDIA EULA) rather than
+          # mis-detected metadata, so allow-licenses cannot cover them. They arrive
+          # transitively via sentence-transformers -> torch -> cuda-toolkit[...] and
+          # are gated sys_platform == 'linux'. The alternative, pinning CPU-only
+          # torch, would strip GPU support from repos doing local model inference.
           allow-dependencies-licenses: |
             pkg:pypi/structlog,
             pkg:pypi/pathspec,
@@ -72,7 +79,15 @@ jobs:
             pkg:npm/@anthropic-ai/claude-agent-sdk-linux-x64-musl,
             pkg:npm/@anthropic-ai/claude-agent-sdk-win32-arm64,
             pkg:npm/@anthropic-ai/claude-agent-sdk-win32-x64,
-            pkg:npm/thread-stream
+            pkg:npm/thread-stream,
+            pkg:pypi/cuda-bindings,
+            pkg:pypi/nvidia-cuda-nvrtc,
+            pkg:pypi/nvidia-cufile,
+            pkg:pypi/nvidia-curand,
+            pkg:pypi/nvidia-cusolver,
+            pkg:pypi/nvidia-cusparse,
+            pkg:pypi/nvidia-nvjitlink,
+            pkg:pypi/nvidia-nvtx
 
           # license abbreviations can be found here:
           # # https://spdx.org/licenses/
