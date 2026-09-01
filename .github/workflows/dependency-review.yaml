@@ -29,6 +29,11 @@ jobs:
 
           # Packages listed here should follow PURL syntax.
           # https://github.com/package-url/purl-spec
+          #
+          # cuda-bindings is an NVIDIA CUDA runtime wheel. It declares
+          # LicenseRef-NVIDIA-SOFTWARE-LICENSE rather than the LicenseRef-NVIDIA-Proprietary
+          # allowed below, and the dependency graph currently reports no licence for it at
+          # all. Listed here so the build does not start failing if that metadata lands.
           allow-dependencies-licenses: |
             pkg:pypi/structlog,
             pkg:pypi/pathspec,
@@ -72,11 +77,23 @@ jobs:
             pkg:npm/@anthropic-ai/claude-agent-sdk-linux-x64-musl,
             pkg:npm/@anthropic-ai/claude-agent-sdk-win32-arm64,
             pkg:npm/@anthropic-ai/claude-agent-sdk-win32-x64,
-            pkg:npm/thread-stream
+            pkg:npm/thread-stream,
+            pkg:pypi/cuda-bindings
 
           # license abbreviations can be found here:
           # # https://spdx.org/licenses/
-          # follows our open source policy
+          # follows our open source policy, with one approved exception
+          #
+          # LicenseRef-NVIDIA-Proprietary is not an open source licence. It is the NVIDIA
+          # CUDA Toolkit EULA (https://docs.nvidia.com/cuda/eula/index.html), carried by
+          # the CUDA runtime wheels that arrive transitively via
+          # sentence-transformers -> torch under a sys_platform == 'linux' marker. Free of
+          # charge, no copyleft and no source disclosure obligation, so it imposes nothing
+          # on Georgian code. Approved for internal and research use only. Shipping it in a
+          # client deliverable needs separate Application Security and Legal approval.
+          #
+          # Comments must stay above this line. allow-licenses is a YAML block scalar, so a
+          # '#' placed inside the list is read as a licence entry rather than a comment.
           allow-licenses: |
             AFL-2.1,
             Apache-1.0,
@@ -112,4 +129,5 @@ jobs:
             OFL-1.1,
             BlueOak-1.0.0,
             0BSD,
-            BSD-2-Clause-FreeBSD
+            BSD-2-Clause-FreeBSD,
+            LicenseRef-NVIDIA-Proprietary
