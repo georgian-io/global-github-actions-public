@@ -1,0 +1,73 @@
+name: Claude Code Interactive (Reusable)
+
+# Reusable workflow for repos that have an OpenClaw config (openclaw/ directory or openclaw.json).
+# Enables @claude mentions in issues, PRs, and review comments.
+#
+# Call from any openclaw-enabled repo via:
+#
+#   uses: georgian-io/global-github-actions-public/.github/workflows/claude-interactive.yaml@main
+#   secrets:
+#     CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+on:
+  workflow_call:
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+
+concurrency:
+  group: >-
+    claude-${{ github.event_name }}-${{
+      github.event.comment.id ||
+      github.event.review.id ||
+      github.event.issue.number ||
+      github.event.pull_request.number ||
+      github.run_id
+    }}
+  cancel-in-progress: true
+
+jobs:
+  claude:
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (
+        contains(github.event.issue.body, '@claude') ||
+        contains(github.event.issue.title, '@claude')
+      ))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@f0c8eb29807907de7f5412d04afceb5e24817127 # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          additional_permissions: |
+            actions: read
+          claude_args: >-
+            --allowed-tools
+            "Read,Write,Edit,Glob,Grep,
+            Bash(gh pr create:*),
+            Bash(gh pr view:*),
+            Bash(gh pr comment:*),
+            Bash(gh issue comment:*),
+            Bash(gh issue view:*),
+            Bash(git status:*),
+            Bash(git diff:*),
+            Bash(git log:*),
+            Bash(git checkout:*),
+            Bash(git add:*),
+            Bash(git commit:*),
+            Bash(git push:*)"
