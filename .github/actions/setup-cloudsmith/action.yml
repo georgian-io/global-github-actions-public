@@ -56,44 +56,4 @@ runs:
         NPM_REPOSITORY: ${{ inputs.npm-repository }}
         PYTHON_REPOSITORY: ${{ inputs.python-repository }}
       run: |
-        set -euo pipefail
-        if [[ -z "$NPM_REPOSITORY" && -z "$PYTHON_REPOSITORY" ]]; then
-          echo "Set npm-repository or python-repository." >&2
-          exit 1
-        fi
-
-        for repository in "$NPM_REPOSITORY" "$PYTHON_REPOSITORY"; do
-          if [[ -n "$repository" && ! "$repository" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
-            echo "Invalid Cloudsmith repository slug: $repository" >&2
-            exit 1
-          fi
-        done
-
-        config_dir="$RUNNER_TEMP/cloudsmith"
-        mkdir -p "$config_dir"
-
-        if [[ -n "$NPM_REPOSITORY" ]]; then
-          npm_registry="https://npm.cloudsmith.io/georgian/${NPM_REPOSITORY}/"
-          {
-            echo "registry=$npm_registry"
-            echo "//npm.cloudsmith.io/georgian/${NPM_REPOSITORY}/:_authToken=\${CLOUDSMITH_API_KEY}"
-            echo "always-auth=true"
-          } > "$config_dir/npmrc"
-          chmod 600 "$config_dir/npmrc"
-          echo "NPM_CONFIG_USERCONFIG=$config_dir/npmrc" >> "$GITHUB_ENV"
-        fi
-
-        if [[ -n "$PYTHON_REPOSITORY" ]]; then
-          python_index="https://dl.cloudsmith.io/basic/georgian/${PYTHON_REPOSITORY}/python/simple/"
-          {
-            echo "machine dl.cloudsmith.io"
-            echo "login token"
-            echo "password $CLOUDSMITH_API_KEY"
-          } > "$config_dir/netrc"
-          chmod 600 "$config_dir/netrc"
-          echo "NETRC=$config_dir/netrc" >> "$GITHUB_ENV"
-          echo "PIP_INDEX_URL=$python_index" >> "$GITHUB_ENV"
-          echo "UV_INDEX_URL=$python_index" >> "$GITHUB_ENV"
-          echo "UV_INDEX_USERNAME=token" >> "$GITHUB_ENV"
-          echo "UV_INDEX_PASSWORD=$CLOUDSMITH_API_KEY" >> "$GITHUB_ENV"
-        fi
+        python3 "$GITHUB_ACTION_PATH/configure.py"
