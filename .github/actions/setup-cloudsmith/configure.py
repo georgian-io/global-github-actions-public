@@ -3,17 +3,7 @@
 import os
 from pathlib import Path
 import re
-import secrets
 import sys
-
-
-def environment_record(name, value):
-    # GitHub's multiline format keeps newlines inside a value from introducing
-    # another variable. Check for delimiter collisions before writing anything.
-    delimiter = secrets.token_hex(32)
-    while delimiter in value:
-        delimiter = secrets.token_hex(32)
-    return f"{name}<<{delimiter}\n{value}\n{delimiter}\n"
 
 
 def configure(env):
@@ -62,7 +52,9 @@ def configure(env):
                       UV_INDEX_USERNAME="token", UV_INDEX_PASSWORD=token)
 
     with open(env["GITHUB_ENV"], "a", encoding="utf-8") as output:
-        output.write("".join(environment_record(key, value) for key, value in values.items()))
+        # Repository slugs, credentials and paths were validated above. None
+        # can contain CR/LF, so each assignment is exactly one environment line.
+        output.writelines(f"{key}={value}\n" for key, value in values.items())
 
 
 if __name__ == "__main__":

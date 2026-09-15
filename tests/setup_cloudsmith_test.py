@@ -3,7 +3,6 @@ import netrc
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
 
 SCRIPT = Path(__file__).resolve().parents[1] / ".github/actions/setup-cloudsmith/configure.py"
 spec = importlib.util.spec_from_file_location("configure", SCRIPT)
@@ -12,19 +11,7 @@ spec.loader.exec_module(module)
 
 
 def parse_environment(content):
-    lines = iter(content.splitlines())
-    result = {}
-    for line in lines:
-        name, delimiter = line.split("<<", 1)
-        value = []
-        for line in lines:
-            if line == delimiter:
-                break
-            value.append(line)
-        else:
-            raise AssertionError("Missing environment delimiter")
-        result[name] = "\n".join(value)
-    return result
+    return dict(line.split("=", 1) for line in content.splitlines())
 
 
 class SetupTest(unittest.TestCase):
@@ -61,17 +48,15 @@ class SetupTest(unittest.TestCase):
                     self.assertFalse(Path(env["GITHUB_ENV"]).exists())
                     self.assertFalse((self.root / "cloudsmith").exists())
 
-    def test_delimiter_collision_and_embedded_assignment(self):
-        payload = "value\ncollision\nINJECTED=yes"
-        with patch.object(module.secrets, "token_hex", side_effect=["collision", "safe-boundary"]):
-            record = module.environment_record("EXPECTED", payload)
-        self.assertEqual(parse_environment(record), {"EXPECTED": payload})
-
     def test_single_manager(self):
-        self.env["PYTHON_REPOSITORY"] = ""
-        module.configure(self.env)
-        self.assertEqual(set(parse_environment(Path(self.env["GITHUB_ENV"]).read_text())),
-                         {"NPM_CONFIG_USERCONFIG"})
+        for manager in ("NPM_REPOSITORY", "PYTHON_REPOSITORY"):
+            with self.subTest(manager=manager):
+                env = dict(self.env, **{manager: ""})
+                Path(env["GITHUB_ENV"]).write_text("")
+                module.configure(env)
+                values = parse_environment(Path(env["GITHUB_ENV"]).read_text())
+                self.assertEqual("NPM_CONFIG_USERCONFIG" in values, manager != "NPM_REPOSITORY")
+                self.assertEqual("NETRC" in values, manager != "PYTHON_REPOSITORY")
 
     def test_missing_repositories(self):
         self.env.update(NPM_REPOSITORY="", PYTHON_REPOSITORY="")
