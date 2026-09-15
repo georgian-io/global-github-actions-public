@@ -7,9 +7,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: cloudsmith-ci-lint-${{ github.repository }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint-package-installs:
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 10
     steps:
       - name: Check out the target repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0

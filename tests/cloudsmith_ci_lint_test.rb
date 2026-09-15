@@ -116,6 +116,21 @@ class CloudsmithCiLintTest < Minitest::Test
     end
   end
 
+  def test_detects_installs_in_compound_commands
+    ["npm ci && npm test", "echo ready; pip install six", "uv sync || echo failed"].each do |command|
+      stdout, _stderr, status = lint(<<~YAML)
+        jobs:
+          test:
+            runs-on: ubuntu-latest
+            steps:
+              - run: #{command}
+      YAML
+
+      refute status.success?, command
+      assert_includes stdout, "CS001", command
+    end
+  end
+
   def test_rejects_setup_after_install
     workflow = <<~YAML
       permissions:
