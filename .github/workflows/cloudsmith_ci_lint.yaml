@@ -1,0 +1,38 @@
+name: Cloudsmith CI lint
+
+on:
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-package-installs:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Check out the target repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: target
+          persist-credentials: false
+
+      - name: Check out the trusted public lint policy
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: georgian-io/global-github-actions-public
+          ref: main
+          path: policy
+          persist-credentials: false
+
+      # Ubuntu 24.04 includes Ruby. Avoid third-party setup actions because
+      # public repositories use the organization's selected-actions policy.
+      - name: Check package installation workflows
+        env:
+          POLICY_SOURCE_REPOSITORY: georgian-io/global-github-actions-public
+        run: |
+          policy_script="policy/scripts/cloudsmith_ci_lint.rb"
+          if [[ ! -f "$policy_script" && "$GITHUB_REPOSITORY" == "$POLICY_SOURCE_REPOSITORY" ]]; then
+            policy_script="target/scripts/cloudsmith_ci_lint.rb"
+          fi
+          ruby "$policy_script" --root target --mode warn
