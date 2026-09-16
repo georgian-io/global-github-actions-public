@@ -420,10 +420,15 @@ def install_observations(root, workflow, job, step, index)
 
     next unless uv_run_install?(segment, root, directory || root)
 
+    trace = if segment.match?(/\s--(?:with|with-editable|from)(?:=|\s)/)
+              "Workflow command `#{segment}` requests an ephemeral uv package."
+            else
+              "Workflow command `#{segment}` resolved through project metadata."
+            end
     observations << InstallObservation.new(
       index: index,
       command: segment,
-      trace: "Workflow command `#{segment}` resolved through project metadata.",
+      trace: trace,
       source_text: "#{segment}\n#{source_text}",
       unknown: false
     )
