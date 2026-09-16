@@ -8,11 +8,16 @@ require "tmpdir"
 class CloudsmithCiLintTest < Minitest::Test
   SCRIPT = File.expand_path("../scripts/cloudsmith_ci_lint.rb", __dir__)
 
-  def lint(workflow, mode: "error")
+  def lint(workflow, mode: "error", files: {})
     Dir.mktmpdir do |root|
       directory = File.join(root, ".github", "workflows")
       FileUtils.mkdir_p(directory)
       File.write(File.join(directory, "ci.yml"), workflow)
+      files.each do |path, content|
+        target = File.join(root, path)
+        FileUtils.mkdir_p(File.dirname(target))
+        File.write(target, content)
+      end
       return Open3.capture3(
         "ruby",
         SCRIPT,
@@ -72,6 +77,7 @@ class CloudsmithCiLintTest < Minitest::Test
       "npm install -g actionlint",
       "uv sync",
       "uv pip install -r requirements.txt",
+      "uv tool install actionlint",
       "poetry install",
       "pipenv install"
     ]
@@ -357,6 +363,212 @@ class CloudsmithCiLintTest < Minitest::Test
     stdout, _stderr, status = lint(workflow)
 
     assert status.success?
+    assert_includes stdout, "found no issues"
+  end
+
+  def test_resolves_make_install_target
+    workflow = <<~YAML
+      jobs:
+        test:
+          runs-on: ubuntu-latest
+          steps:
+            - name: Install dependencies
+              run: make install-dev
+    YAML
+
+    stdout, _stderr, status = lint(
+      workflow,
+      files: { "Makefile" => "install-dev:\n\tuv sync --all-extras\n" }
+    )
+
+    refute status.success?
+    assert_includes stdout, "CS001"
+    assert_includes stdout, "CS002"
+    assert_includes stdout, "Makefile"
+    assert_includes stdout, "uv sync --all-extras"
+  end
+
+  def test_accepts_make_install_after_cloudsmith_setup
+    workflow = <<~YAML
+      permissions:
+        id-token: write
+      jobs:
+        test:
+          runs-on: ubuntu-latest
+          steps:
+            - uses: georgian-io/terraform-infra/.github/actions/setup-cloudsmith@main
+            - name: Install dependencies
+              run: make install-dev
+    YAML
+
+    stdout, _stderr, status = lint(
+      workflow,
+      files: { "Makefile" => "install-dev:\n\tuv sync --all-extras\n" }
+    )
+
+    assert status.success?, stdout
+    assert_includes stdout, "found no issues"
+  end
+
+  def test_reports_public_registry_in_resolved_make_recipe
+    workflow = <<~YAML
+      permissions:
+        id-token: write
+      jobs:
+        test:
+          runs-on: ubuntu-latest
+          steps:
+            - uses: georgian-io/terraform-infra/.github/actions/setup-cloudsmith@main
+            - name: Install dependencies
+              run: make install-dev
+    YAML
+
+    stdout, _stderr, status = lint(
+      workflow,
+      files: { "Makefile" => "install-dev:\n\tuv sync --index-url https://pypi.org/simple\n" }
+    )
+
+    refute status.success?
+    assert_includes stdout, "CS003"
+    assert_includes stdout, "Makefile"
+  end
+
+  def test_resolves_make_working_directory
+    workflow = <<~YAML
+      jobs:
+        test:
+          runs-on: ubuntu-latest
+          steps:
+            - name: Install dependencies
+              working-directory: services/api
+              run: make install-dev
+    YAML
+
+    stdout, _stderr, status = lint(
+      workflow,
+      files: { "services/api/Makefile" => "install-dev:\n\tuv sync\n" }
+    )
+
+    refute status.success?
+    assert_includes stdout, "CS001"
+    assert_includes stdout, "services/api/Makefile"
+  end
+
+  def test_detects_uv_run_with_external_project_dependencies
+    workflow = <<~YAML
+      jobs:
+        test:
+          runs-on: ubuntu-latest
+          steps:
+            - name: Run generator
+              run: uv run scripts/generate.py
+    YAML
+
+    stdout, _stderr, status = lint(
+      workflow,
+      files: {
+        "pyproject.toml" => "[project]\nname = \"demo\"\ndependencies = [\n  \"requests\",\n]\n"
+      }
+    )
+
+    refute status.success?
+    assert_includes stdout, "CS001"
+    assert_includes stdout, "CS002"
+    assert_includes stdout, "project metadata"
+  end
+
+  def test_ignores_uv_run_with_no_sync
+    workflow = <<~YAML
+      jobs:
+        test:
+          runs-on: ubuntu-latest
+          steps:
+            - run: uv run --no-sync scripts/generate.py
+    YAML
+
+    stdout, _stderr, status = lint(
+      workflow,
+      files: {
+        "pyproject.toml" => "[project]\nname = \"demo\"\ndependencies = [\n  \"requests\",\n]\n"
+      }
+    )
+
+    assert status.success?, stdout
+    assert_includes stdout, "found no issues"
+  end
+
+  def test_ignores_uv_run_without_external_dependencies
+    workflow = <<~YAML
+      jobs:
+        release:
+          runs-on: ubuntu-latest
+          steps:
+            - run: uv run scripts/create_archive.py
+    YAML
+
+    stdout, _stderr, status = lint(
+      workflow,
+      files: {
+        "pyproject.toml" => "[project]\nname = \"demo\"\ndependencies = []\n",
+        "uv.lock" => "version = 1\n\n[[package]]\nname = \"demo\"\n"
+      }
+    )
+
+    assert status.success?, stdout
+    assert_includes stdout, "found no issues"
+  end
+
+  def test_detects_uv_run_with_ephemeral_package
+    workflow = <<~YAML
+      jobs:
+        test:
+          runs-on: ubuntu-latest
+          steps:
+            - run: uv run --no-project --with pytest scripts/test.py
+    YAML
+
+    stdout, _stderr, status = lint(workflow)
+
+    refute status.success?
+    assert_includes stdout, "CS001"
+    assert_includes stdout, "CS002"
+  end
+
+  def test_reports_unresolved_make_install_wrapper
+    workflow = <<~YAML
+      jobs:
+        test:
+          runs-on: ubuntu-latest
+          steps:
+            - name: Install dependencies
+              run: make install-ci
+    YAML
+
+    stdout, _stderr, status = lint(workflow)
+
+    refute status.success?
+    assert_includes stdout, "CS004"
+    refute_includes stdout, "CS001"
+  end
+
+  def test_accepts_direct_auth_with_cloudsmith_source_in_makefile
+    workflow = <<~YAML
+      permissions:
+        id-token: write
+      jobs:
+        test:
+          runs-on: ubuntu-latest
+          steps:
+            - uses: cloudsmith-io/cloudsmith-cli-action@v2
+            - run: make install-dev
+    YAML
+
+    stdout, _stderr, status = lint(
+      workflow,
+      files: { "Makefile" => "install-dev:\n\tuv sync --index-url https://dl.cloudsmith.io/georgian/python/georgian-test/simple/\n" }
+    )
+
+    assert status.success?, stdout
     assert_includes stdout, "found no issues"
   end
 
