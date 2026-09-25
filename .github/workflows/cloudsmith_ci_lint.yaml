@@ -13,6 +13,9 @@ concurrency:
 
 jobs:
   lint-package-installs:
+    # This policy repository tests the linter separately. Skipping it here
+    # avoids running a pull request's Ruby before the trusted main copy exists.
+    if: github.repository != 'georgian-io/global-github-actions-public' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
@@ -33,11 +36,4 @@ jobs:
       # Ubuntu 24.04 includes Ruby. Avoid third-party setup actions because
       # public repositories use the organization's selected-actions policy.
       - name: Check package installation workflows
-        env:
-          POLICY_SOURCE_REPOSITORY: georgian-io/global-github-actions-public
-        run: |
-          policy_script="policy/scripts/cloudsmith_ci_lint.rb"
-          if [[ ! -f "$policy_script" && "$GITHUB_REPOSITORY" == "$POLICY_SOURCE_REPOSITORY" ]]; then
-            policy_script="target/scripts/cloudsmith_ci_lint.rb"
-          fi
-          ruby "$policy_script" --root target --mode warn
+        run: ruby policy/scripts/cloudsmith_ci_lint.rb --root target --mode warn

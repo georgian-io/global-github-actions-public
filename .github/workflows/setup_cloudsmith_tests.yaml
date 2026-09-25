@@ -9,6 +9,8 @@ concurrency:
   cancel-in-progress: true
 jobs:
   test:
+    # Do not execute pull-request code from a fork on a runner.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
@@ -16,3 +18,4 @@ jobs:
         with:
           persist-credentials: false
       - run: python3 -m unittest discover -s tests -p 'setup_cloudsmith_test.py'
+      - run: ruby tests/cloudsmith_ci_lint_test.rb
