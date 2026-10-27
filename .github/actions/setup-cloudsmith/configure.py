@@ -14,6 +14,13 @@ def configure(env):
     for repository in (npm, python):
         if repository and not re.fullmatch(r"[a-z0-9][a-z0-9-]*", repository):
             raise ValueError("Invalid Cloudsmith repository slug.")
+    bypass = env.get("COOLDOWN_BYPASS", "false")
+    if bypass not in ("true", "false"):
+        raise ValueError("cooldown-bypass must be true or false.")
+    # The bypass identity can read only georgian-ci-bypass. Naming it keeps
+    # the bypass visible in the workflow diff.
+    if bypass == "true" and any(r and r != "georgian-ci-bypass" for r in (npm, python)):
+        raise ValueError("With cooldown-bypass, set each repository input to georgian-ci-bypass.")
 
     token = env["CLOUDSMITH_API_KEY"]
     # The token also enters netrc. Reject whitespace and quoting characters
@@ -55,6 +62,9 @@ def configure(env):
         # Repository slugs, credentials and paths were validated above. None
         # can contain CR/LF, so each assignment is exactly one environment line.
         output.writelines(f"{key}={value}\n" for key, value in values.items())
+    if bypass == "true":
+        print("::warning title=Cloudsmith cooldown bypass::This job installs packages "
+              "from georgian-ci-bypass, which skips the package cooldown.")
 
 
 if __name__ == "__main__":

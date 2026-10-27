@@ -10,6 +10,13 @@ inputs:
     description: Cloudsmith repository for Python clients.
     required: false
     default: ""
+  cooldown-bypass:
+    description: >-
+      Set to "true" to skip the package cooldown with this repository's
+      bypass identity. The job must run in the protected cloudsmith-bypass
+      environment, and each repository input must be georgian-ci-bypass.
+    required: false
+    default: "false"
 
 outputs:
   service-slug:
@@ -22,10 +29,23 @@ runs:
     - name: Select the repository identity
       id: identity
       shell: bash
+      env:
+        COOLDOWN_BYPASS: ${{ inputs.cooldown-bypass }}
       run: |
         set -euo pipefail
+        # Cloudsmith trusts the ci-bypass- identity only for a token with the
+        # cloudsmith-bypass environment claim, so a job outside that approved
+        # environment fails here at authentication.
+        case "$COOLDOWN_BYPASS" in
+          false) prefix="ci-pull" ;;
+          true) prefix="ci-bypass" ;;
+          *)
+            echo "cooldown-bypass must be true or false." >&2
+            exit 1
+            ;;
+        esac
         repository="${GITHUB_REPOSITORY#*/}"
-        candidate="ci-pull-${repository,,}"
+        candidate="${prefix}-${repository,,}"
         candidate="$(printf '%s' "$candidate" | tr -cs 'a-z0-9-' '-' | sed 's/^-//;s/-$//')"
         if (( ${#candidate} > 64 )); then
           digest="$(printf '%s' "$candidate" | sha256sum | cut -c1-8)"
@@ -55,5 +75,6 @@ runs:
       env:
         NPM_REPOSITORY: ${{ inputs.npm-repository }}
         PYTHON_REPOSITORY: ${{ inputs.python-repository }}
+        COOLDOWN_BYPASS: ${{ inputs.cooldown-bypass }}
       run: |
         python3 "$GITHUB_ACTION_PATH/configure.py"
