@@ -21,6 +21,12 @@ def configure(env):
     # the bypass visible in the workflow diff.
     if bypass == "true" and any(r and r != "georgian-ci-bypass" for r in (npm, python)):
         raise ValueError("With cooldown-bypass, set each repository input to georgian-ci-bypass.")
+    # A reviewer may approve their own bypass run, so the reason is the
+    # written record of why it was needed.
+    reason = env.get("COOLDOWN_BYPASS_REASON", "")
+    if bypass == "true" and (not reason.strip() or "\n" in reason or "\r" in reason
+                             or len(reason) > 300):
+        raise ValueError("With cooldown-bypass, set cooldown-bypass-reason to one line of at most 300 characters.")
 
     token = env["CLOUDSMITH_API_KEY"]
     # The token also enters netrc. Reject whitespace and quoting characters
@@ -64,7 +70,15 @@ def configure(env):
         output.writelines(f"{key}={value}\n" for key, value in values.items())
     if bypass == "true":
         print("::warning title=Cloudsmith cooldown bypass::This job installs packages "
-              "from georgian-ci-bypass, which skips the package cooldown.")
+              "from georgian-ci-bypass, which skips the package cooldown. "
+              f"Reason: {reason.replace('%', '%25')}")
+        started_by = env.get("GITHUB_TRIGGERING_ACTOR") or env.get("GITHUB_ACTOR") or "unknown"
+        with open(env.get("GITHUB_STEP_SUMMARY") or os.devnull, "a", encoding="utf-8") as summary:
+            summary.write("### Cloudsmith cooldown bypass\n\n"
+                          f"- Started by: {started_by}\n"
+                          f"- Reason: {reason}\n"
+                          "- Approver: see this run's deployment review for the "
+                          "`cloudsmith-bypass` environment.\n")
 
 
 if __name__ == "__main__":

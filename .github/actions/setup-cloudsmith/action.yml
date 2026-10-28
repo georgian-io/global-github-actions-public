@@ -17,6 +17,13 @@ inputs:
       environment, and each repository input must be georgian-ci-bypass.
     required: false
     default: "false"
+  cooldown-bypass-reason:
+    description: >-
+      Required with cooldown-bypass. One line saying why the job needs a
+      version the cooldown hides. It is shown on the run and in the job
+      summary, next to GitHub's record of who approved the run.
+    required: false
+    default: ""
 
 outputs:
   service-slug:
@@ -76,5 +83,6 @@ runs:
         NPM_REPOSITORY: ${{ inputs.npm-repository }}
         PYTHON_REPOSITORY: ${{ inputs.python-repository }}
         COOLDOWN_BYPASS: ${{ inputs.cooldown-bypass }}
+        COOLDOWN_BYPASS_REASON: ${{ inputs.cooldown-bypass-reason }}
       run: |
         python3 "$GITHUB_ACTION_PATH/configure.py"

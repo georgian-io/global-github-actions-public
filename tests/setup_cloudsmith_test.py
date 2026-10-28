@@ -101,12 +101,20 @@ class SetupTest(unittest.TestCase):
                 self.assertEqual(self.identity("repo", value), (1, None))
 
     def test_bypass_uses_only_the_bypass_repository_and_warns(self):
+        reason = "next 16.3.1 fixes CVE-2026-0001, released today (100% needed)"
+        summary = self.root / "summary"
         env = dict(self.env, NPM_REPOSITORY="georgian-ci-bypass",
-                   PYTHON_REPOSITORY="georgian-ci-bypass", COOLDOWN_BYPASS="true")
+                   PYTHON_REPOSITORY="georgian-ci-bypass", COOLDOWN_BYPASS="true",
+                   COOLDOWN_BYPASS_REASON=reason, GITHUB_STEP_SUMMARY=str(summary),
+                   GITHUB_TRIGGERING_ACTOR="octocat")
         stdout = io.StringIO()
         with contextlib.redirect_stdout(stdout):
             module.configure(env)
         self.assertIn("::warning title=Cloudsmith cooldown bypass::", stdout.getvalue())
+        self.assertIn("Reason: next 16.3.1 fixes CVE-2026-0001, released today (100%25 needed)",
+                      stdout.getvalue())
+        self.assertIn("Started by: octocat", summary.read_text())
+        self.assertIn(f"Reason: {reason}", summary.read_text())
         values = parse_environment(Path(env["GITHUB_ENV"]).read_text())
         self.assertIn("/georgian-ci-bypass/", values["PIP_INDEX_URL"])
         for npm, python, bypass in (("georgian-main", "", "true"), ("", "georgian-test", "true"),
@@ -114,10 +122,26 @@ class SetupTest(unittest.TestCase):
                                     ("georgian-ci-bypass", "", "yes")):
             with self.subTest(npm=npm, python=python, bypass=bypass):
                 env = dict(self.env, NPM_REPOSITORY=npm, PYTHON_REPOSITORY=python,
-                           COOLDOWN_BYPASS=bypass, GITHUB_ENV=str(self.root / "rejected"))
+                           COOLDOWN_BYPASS=bypass, COOLDOWN_BYPASS_REASON=reason,
+                           GITHUB_ENV=str(self.root / "rejected"))
                 with self.assertRaises(ValueError):
                     module.configure(env)
                 self.assertFalse((self.root / "rejected").exists())
+
+    def test_bypass_requires_a_single_line_reason(self):
+        for reason in ("", "   ", "first line\nINJECTED=1", "first line\r", "x" * 301):
+            with self.subTest(reason=reason[:20]):
+                summary = self.root / "summary"
+                env = dict(self.env, NPM_REPOSITORY="georgian-ci-bypass", PYTHON_REPOSITORY="",
+                           COOLDOWN_BYPASS="true", COOLDOWN_BYPASS_REASON=reason,
+                           GITHUB_STEP_SUMMARY=str(summary))
+                stdout = io.StringIO()
+                with contextlib.redirect_stdout(stdout), self.assertRaises(ValueError):
+                    module.configure(env)
+                self.assertNotIn("::warning", stdout.getvalue())
+                self.assertFalse(Path(env["GITHUB_ENV"]).exists())
+                self.assertFalse(summary.exists())
+                self.assertFalse((self.root / "cloudsmith").exists())
 
     def test_missing_repositories(self):
         self.env.update(NPM_REPOSITORY="", PYTHON_REPOSITORY="")
