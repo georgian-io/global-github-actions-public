@@ -11,6 +11,7 @@ import yaml
 ACTION_DIR = Path(__file__).resolve().parents[1] / ".github" / "actions" / "setup-cloudsmith"
 SCRIPT = ACTION_DIR / "configure.py"
 INDEX = "https://dl.cloudsmith.io/basic/georgian/georgian-main/python/simple/"
+PACKAGES = "next@16.3.1\n@types/node@22.10.1\n"
 
 
 def run(command, env):
@@ -24,7 +25,7 @@ def run(command, env):
 class ConfigureTest(unittest.TestCase):
     def configure(self, npm="georgian-main", python="georgian-main",
                   token="test-token:with/punctuation", temp_suffix="runner temp",
-                  bypass="false", reason=""):
+                  bypass="false", reason="", packages=""):
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         temp = root / temp_suffix
         env_file = root / "github_env"
@@ -37,6 +38,7 @@ class ConfigureTest(unittest.TestCase):
             "GITHUB_ENV": str(env_file),
             "COOLDOWN_BYPASS": bypass,
             "COOLDOWN_BYPASS_REASON": reason,
+            "COOLDOWN_BYPASS_PACKAGES": packages,
             "GITHUB_STEP_SUMMARY": str(self.summary),
             "GITHUB_TRIGGERING_ACTOR": "octocat",
         })
@@ -103,18 +105,21 @@ class ConfigureTest(unittest.TestCase):
     def test_bypass_uses_only_the_bypass_repository_and_warns(self):
         reason = "next 16.3.1 fixes CVE-2026-0001, released today (100% needed)"
         _, env_file, result = self.configure(npm="georgian-ci-bypass", python="georgian-ci-bypass",
-                                             bypass="true", reason=reason)
+                                             bypass="true", reason=reason, packages=PACKAGES)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("::warning title=Cloudsmith cooldown bypass::", result.stdout)
         self.assertIn("Reason: next 16.3.1 fixes CVE-2026-0001, released today (100%25 needed)", result.stdout)
         summary = self.summary.read_text()
         self.assertIn("Started by: octocat", summary)
+        self.assertIn("  - `next@16.3.1`\n  - `@types/node@22.10.1`\n", summary)
+        self.assertIn("next@16.3.1, @types/node@22.10.1. Reason:", result.stdout)
         self.assertIn(f"Reason: {reason}", summary)
         self.assertIn("PIP_INDEX_URL=https://dl.cloudsmith.io/basic/georgian/georgian-ci-bypass/python/simple/",
                       env_file.read_text())
         for npm, python in (("georgian-main", ""), ("", "georgian-main"), ("georgian-ci-bypass", "georgian-rnd")):
             with self.subTest(npm=npm, python=python):
-                temp, env_file, result = self.configure(npm=npm, python=python, bypass="true", reason=reason)
+                temp, env_file, result = self.configure(npm=npm, python=python, bypass="true", reason=reason,
+                                                        packages=PACKAGES)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("georgian-ci-bypass", result.stderr)
                 self.assertFalse(env_file.exists())
@@ -124,7 +129,7 @@ class ConfigureTest(unittest.TestCase):
         for reason in ("", "   ", "first line\nINJECTED=1", "first line\r", "x" * 301):
             with self.subTest(reason=reason[:20]):
                 temp, env_file, result = self.configure(npm="georgian-ci-bypass", python="",
-                                                        bypass="true", reason=reason)
+                                                        bypass="true", reason=reason, packages=PACKAGES)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("cooldown-bypass-reason", result.stderr)
                 self.assertNotIn("::warning", result.stdout)
@@ -132,11 +137,50 @@ class ConfigureTest(unittest.TestCase):
                 self.assertFalse(self.summary.exists())
                 self.assertFalse((temp / "cloudsmith").exists())
 
+    def test_bypass_requires_exact_package_versions(self):
+        for packages in ("", "next", "next@", "next@16 extra", "next@16.3.1\r", "`next`@1",
+                         "next@1\nINJECTED=1 x", "\n".join(f"p{i}@1" for i in range(21))):
+            with self.subTest(packages=packages[:20]):
+                temp, env_file, result = self.configure(npm="georgian-ci-bypass", python="", bypass="true",
+                                                        reason="needed", packages=packages)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("cooldown-bypass-packages", result.stderr)
+                self.assertFalse(env_file.exists())
+                self.assertFalse(self.summary.exists())
+
     def test_reason_is_ignored_without_bypass(self):
         _, _, result = self.configure(reason="not used")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "")
         self.assertFalse(self.summary.exists())
+
+
+class RequestTest(unittest.TestCase):
+    def request(self, reason, packages):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        summary = root / "step_summary"
+        result = run("request", {"COOLDOWN_BYPASS_REASON": reason, "COOLDOWN_BYPASS_PACKAGES": packages,
+                                 "GITHUB_STEP_SUMMARY": str(summary), "GITHUB_TRIGGERING_ACTOR": "octocat"})
+        return result, summary
+
+    def test_shows_reason_and_versions_before_approval(self):
+        result, summary = self.request("next 16.3.1 fixes CVE-2026-0001 (100% needed)", PACKAGES)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("::warning title=Cloudsmith cooldown bypass requested::", result.stdout)
+        self.assertIn("next@16.3.1, @types/node@22.10.1. Reason: next 16.3.1 fixes CVE-2026-0001 (100%25 needed)",
+                      result.stdout)
+        text = summary.read_text()
+        self.assertIn("### Cloudsmith cooldown bypass requested", text)
+        self.assertIn("  - `next@16.3.1`\n", text)
+        self.assertIn("If this summary is missing, reject the deployment.", text)
+
+    def test_rejects_bad_requests_without_output(self):
+        for reason, packages in (("", PACKAGES), ("why", ""), ("why\nINJECTED=1", PACKAGES), ("why", "a b@1")):
+            with self.subTest(reason=reason, packages=packages[:15]):
+                result, summary = self.request(reason, packages)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, "")
+                self.assertFalse(summary.exists())
 
 
 class IdentityTest(unittest.TestCase):
@@ -177,6 +221,13 @@ class IdentityTest(unittest.TestCase):
 
 
 class ActionTest(unittest.TestCase):
+    def test_request_action_runs_the_request_command(self):
+        action = yaml.safe_load((ACTION_DIR.parent / "cloudsmith-bypass-request" / "action.yml").read_text())
+        steps = action["runs"]["steps"]
+        self.assertEqual([step["run"] for step in steps],
+                         ['python3 "$GITHUB_ACTION_PATH/../setup-cloudsmith/configure.py" request'])
+        self.assertTrue(all("${{" not in step["run"] for step in steps))
+
     def test_run_steps_call_the_script(self):
         steps = yaml.safe_load((ACTION_DIR / "action.yml").read_text())["runs"]["steps"]
         runs = [step["run"] for step in steps if "run" in step]
