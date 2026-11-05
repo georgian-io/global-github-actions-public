@@ -14,7 +14,7 @@ concurrency:
 jobs:
   lint-package-installs:
     # This policy repository tests the linter separately. Skipping it here
-    # avoids running a pull request's Ruby before the trusted main copy exists.
+    # avoids running a pull request's code before the trusted main copy exists.
     if: github.repository != 'georgian-io/global-github-actions-public' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
@@ -33,7 +33,9 @@ jobs:
           path: policy
           persist-credentials: false
 
-      # Ubuntu 24.04 includes Ruby. Avoid third-party setup actions because
-      # public repositories use the organization's selected-actions policy.
+      # The runner's system Python includes PyYAML. Avoid third-party setup
+      # actions because public repositories use the organization's
+      # selected-actions policy. The lint comes from main, not from the pull
+      # request, so a pull request can't change the rules that check it.
       - name: Check package installation workflows
-        run: ruby policy/scripts/cloudsmith_ci_lint.rb --root target --mode warn
+        run: python3 policy/.github/actions/cloudsmith-ci-lint/cloudsmith_ci_lint.py --root target --mode warn

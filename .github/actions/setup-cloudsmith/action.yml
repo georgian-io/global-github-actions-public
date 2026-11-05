@@ -38,36 +38,7 @@ runs:
       shell: bash
       env:
         COOLDOWN_BYPASS: ${{ inputs.cooldown-bypass }}
-      run: |
-        set -euo pipefail
-        # Cloudsmith trusts the ci-bypass- identity only for a token with the
-        # cloudsmith-bypass environment claim, so a job outside that approved
-        # environment fails here at authentication.
-        case "$COOLDOWN_BYPASS" in
-          false) prefix="ci-pull" ;;
-          true) prefix="ci-bypass" ;;
-          *)
-            echo "cooldown-bypass must be true or false." >&2
-            exit 1
-            ;;
-        esac
-        repository="${GITHUB_REPOSITORY#*/}"
-        candidate="${prefix}-${repository,,}"
-        candidate="$(printf '%s' "$candidate" | tr -cs 'a-z0-9-' '-' | sed 's/^-//;s/-$//')"
-        if (( ${#candidate} > 64 )); then
-          digest="$(printf '%s' "$candidate" | sha256sum | cut -c1-8)"
-          candidate="${candidate:0:55}"
-          while [[ "$candidate" == *- ]]; do
-            candidate="${candidate%-}"
-          done
-          candidate="${candidate}-${digest}"
-        fi
-        service_slug="$candidate"
-        if [[ ! "$service_slug" =~ ^[a-z0-9][a-z0-9-]{0,63}$ ]]; then
-          echo "Invalid Cloudsmith service slug: $service_slug" >&2
-          exit 1
-        fi
-        echo "service-slug=$service_slug" >> "$GITHUB_OUTPUT"
+      run: python3 "$GITHUB_ACTION_PATH/configure.py" identity
 
     - name: Authenticate to Cloudsmith
       uses: cloudsmith-io/cloudsmith-cli-action@69e169e2ad9bc9a1599c2dff464061a00fe9f8ba # v3.1.1
@@ -84,5 +55,4 @@ runs:
         PYTHON_REPOSITORY: ${{ inputs.python-repository }}
         COOLDOWN_BYPASS: ${{ inputs.cooldown-bypass }}
         COOLDOWN_BYPASS_REASON: ${{ inputs.cooldown-bypass-reason }}
-      run: |
-        python3 "$GITHUB_ACTION_PATH/configure.py"
+      run: python3 "$GITHUB_ACTION_PATH/configure.py" configure
