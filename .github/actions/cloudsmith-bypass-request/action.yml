@@ -1,0 +1,23 @@
+name: Request a Cloudsmith cooldown bypass
+description: >-
+  Shows a bypass reason and exact package versions on the run, in a job that
+  runs before the job gated by the cloudsmith-bypass environment, so the
+  reviewer sees them before approving. Needs no secrets or permissions.
+
+inputs:
+  cooldown-bypass-reason:
+    description: One line, at most 300 characters. Use the same value in setup-cloudsmith.
+    required: true
+  cooldown-bypass-packages:
+    description: The exact versions, one name@version per line. Use the same value in setup-cloudsmith.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Show the bypass request
+      shell: bash
+      env:
+        COOLDOWN_BYPASS_REASON: ${{ inputs.cooldown-bypass-reason }}
+        COOLDOWN_BYPASS_PACKAGES: ${{ inputs.cooldown-bypass-packages }}
+      run: python3 "$GITHUB_ACTION_PATH/../setup-cloudsmith/configure.py" request
