@@ -22,25 +22,7 @@ runs:
     - name: Select the repository identity
       id: identity
       shell: bash
-      run: |
-        set -euo pipefail
-        repository="${GITHUB_REPOSITORY#*/}"
-        candidate="ci-pull-${repository,,}"
-        candidate="$(printf '%s' "$candidate" | tr -cs 'a-z0-9-' '-' | sed 's/^-//;s/-$//')"
-        if (( ${#candidate} > 64 )); then
-          digest="$(printf '%s' "$candidate" | sha256sum | cut -c1-8)"
-          candidate="${candidate:0:55}"
-          while [[ "$candidate" == *- ]]; do
-            candidate="${candidate%-}"
-          done
-          candidate="${candidate}-${digest}"
-        fi
-        service_slug="$candidate"
-        if [[ ! "$service_slug" =~ ^[a-z0-9][a-z0-9-]{0,63}$ ]]; then
-          echo "Invalid Cloudsmith service slug: $service_slug" >&2
-          exit 1
-        fi
-        echo "service-slug=$service_slug" >> "$GITHUB_OUTPUT"
+      run: python3 "$GITHUB_ACTION_PATH/configure.py" identity
 
     - name: Authenticate to Cloudsmith
       uses: cloudsmith-io/cloudsmith-cli-action@69e169e2ad9bc9a1599c2dff464061a00fe9f8ba # v3.1.1
@@ -55,5 +37,4 @@ runs:
       env:
         NPM_REPOSITORY: ${{ inputs.npm-repository }}
         PYTHON_REPOSITORY: ${{ inputs.python-repository }}
-      run: |
-        python3 "$GITHUB_ACTION_PATH/configure.py"
+      run: python3 "$GITHUB_ACTION_PATH/configure.py" configure
