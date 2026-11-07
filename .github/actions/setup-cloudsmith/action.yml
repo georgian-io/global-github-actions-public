@@ -1,0 +1,40 @@
+name: Set up Cloudsmith
+description: Authenticate one repository and configure package managers.
+
+inputs:
+  npm-repository:
+    description: Cloudsmith repository for npm-compatible clients.
+    required: false
+    default: ""
+  python-repository:
+    description: Cloudsmith repository for Python clients.
+    required: false
+    default: ""
+
+outputs:
+  service-slug:
+    description: Cloudsmith service slug used by this job.
+    value: ${{ steps.identity.outputs.service-slug }}
+
+runs:
+  using: composite
+  steps:
+    - name: Select the repository identity
+      id: identity
+      shell: bash
+      run: python3 "$GITHUB_ACTION_PATH/configure.py" identity
+
+    - name: Authenticate to Cloudsmith
+      uses: cloudsmith-io/cloudsmith-cli-action@69e169e2ad9bc9a1599c2dff464061a00fe9f8ba # v3.1.1
+      with:
+        cli-version: "1.27.0"
+        oidc-namespace: georgian
+        oidc-service-slug: ${{ steps.identity.outputs.service-slug }}
+        export-auth-token: "true"
+
+    - name: Configure package clients
+      shell: bash
+      env:
+        NPM_REPOSITORY: ${{ inputs.npm-repository }}
+        PYTHON_REPOSITORY: ${{ inputs.python-repository }}
+      run: python3 "$GITHUB_ACTION_PATH/configure.py" configure
