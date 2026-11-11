@@ -10,6 +10,27 @@ inputs:
     description: Cloudsmith repository for Python clients.
     required: false
     default: ""
+  cooldown-bypass:
+    description: >-
+      Set to "true" to skip the package cooldown with this repository's
+      bypass identity. The job must run in the protected cloudsmith-bypass
+      environment, and each repository input must be georgian-ci-bypass.
+    required: false
+    default: "false"
+  cooldown-bypass-reason:
+    description: >-
+      Required with cooldown-bypass. One line saying why the job needs a
+      version the cooldown hides. It is shown on the run and in the job
+      summary, next to GitHub's record of who approved the run.
+    required: false
+    default: ""
+  cooldown-bypass-packages:
+    description: >-
+      Required with cooldown-bypass. The exact versions the job needs, one
+      name@version per line. Use the same reason and list in an earlier
+      cloudsmith-bypass-request job, so the reviewer sees them before approving.
+    required: false
+    default: ""
 
 outputs:
   service-slug:
@@ -22,6 +43,8 @@ runs:
     - name: Select the repository identity
       id: identity
       shell: bash
+      env:
+        COOLDOWN_BYPASS: ${{ inputs.cooldown-bypass }}
       run: python3 "$GITHUB_ACTION_PATH/configure.py" identity
 
     - name: Authenticate to Cloudsmith
@@ -37,4 +60,7 @@ runs:
       env:
         NPM_REPOSITORY: ${{ inputs.npm-repository }}
         PYTHON_REPOSITORY: ${{ inputs.python-repository }}
+        COOLDOWN_BYPASS: ${{ inputs.cooldown-bypass }}
+        COOLDOWN_BYPASS_REASON: ${{ inputs.cooldown-bypass-reason }}
+        COOLDOWN_BYPASS_PACKAGES: ${{ inputs.cooldown-bypass-packages }}
       run: python3 "$GITHUB_ACTION_PATH/configure.py" configure

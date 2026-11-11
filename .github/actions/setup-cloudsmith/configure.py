@@ -3,6 +3,12 @@
 `identity` prints the service slug for GITHUB_REPOSITORY to GITHUB_OUTPUT.
 `configure` writes npm, pip, uv, Poetry and Pipenv configuration and the
 matching GitHub environment records. Neither prints rejected values.
+
+With COOLDOWN_BYPASS=true both use the repository's ci-bypass- identity, which
+Cloudsmith trusts only in the approved cloudsmith-bypass environment, and
+`configure` requires georgian-ci-bypass, a one-line reason and the exact
+package versions. `request` validates the same reason and versions and shows
+them on the run in an earlier job, so the reviewer sees them before approving.
 """
 
 import hashlib
@@ -16,11 +22,64 @@ SLUG = re.compile(r"[a-z0-9][a-z0-9-]*")
 # The token also enters netrc. Reject whitespace and quoting characters rather
 # than allowing them to create additional netrc fields or records.
 TOKEN = re.compile(r"[A-Za-z0-9._~+/=:-]+")
+BYPASS_REPOSITORY = "georgian-ci-bypass"
+MAX_REASON = 300
+MAX_PACKAGES = 20
+# name@version, with an optional npm scope. No whitespace, quotes or backticks,
+# so a value can't add Markdown, annotations or environment records.
+PACKAGE = re.compile(r"(?:@[a-z0-9][a-z0-9._-]{0,63}/)?[A-Za-z0-9][A-Za-z0-9._-]{0,99}@[A-Za-z0-9][A-Za-z0-9.+!_-]{0,63}")
 
 
-def service_slug(repository):
-    """Name of the per-repository ci-pull- Cloudsmith service: lowercase, hyphens, at most 64 characters."""
-    candidate = re.sub(r"[^a-z0-9]+", "-", f"ci-pull-{repository}".lower()).strip("-")
+def cooldown_bypass(env):
+    value = env.get("COOLDOWN_BYPASS", "false")
+    if value not in ("true", "false"):
+        raise ValueError("cooldown-bypass must be true or false.")
+    return value == "true"
+
+
+def bypass_request(env):
+    """The reason and package versions of a bypass, validated. Never echoes a rejected value."""
+    reason = env.get("COOLDOWN_BYPASS_REASON", "")
+    # A reviewer may approve their own bypass run, so the reason is the
+    # written record of why it was needed.
+    if not reason.strip() or "\r" in reason or "\n" in reason or len(reason) > MAX_REASON:
+        raise ValueError(f"Set cooldown-bypass-reason to one line of at most {MAX_REASON} characters.")
+    text = env.get("COOLDOWN_BYPASS_PACKAGES", "")
+    packages = [line.strip() for line in text.split("\n") if line.strip()]
+    if "\r" in text or not 1 <= len(packages) <= MAX_PACKAGES or not all(PACKAGE.fullmatch(p) for p in packages):
+        raise ValueError(f"Set cooldown-bypass-packages to 1 to {MAX_PACKAGES} lines of name@version.")
+    return reason, packages
+
+
+def write_summary(env, text):
+    summary = env.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(single_line(summary), "a", encoding="utf-8") as output:
+            output.write(text)
+
+
+def bypass_record(env, title, lead, reason, packages, closing):
+    """A warning annotation plus a job summary, both visible on the run page."""
+    escaped = reason.replace("%", "%25")
+    print(f"::warning title={title}::{lead} {', '.join(packages)}. Reason: {escaped}")
+    actor = env.get("GITHUB_TRIGGERING_ACTOR") or env.get("GITHUB_ACTOR") or "unknown"
+    listed = "".join(f"  - `{package}`\n" for package in packages)
+    write_summary(env, f"### {title}\n\n- Started by: {actor}\n- Packages:\n{listed}- Reason: {reason}\n\n{closing}\n")
+
+
+def request(env):
+    """Run in a job before the gated one: the reviewer reads this while approving."""
+    reason, packages = bypass_request(env)
+    bypass_record(
+        env, "Cloudsmith cooldown bypass requested", "A later job in this run waits for approval to install", reason, packages,
+        "Approve the `cloudsmith-bypass` deployment only if these versions and this reason match the change. "
+        "If this summary is missing, reject the deployment.",
+    )
+
+
+def service_slug(repository, prefix="ci-pull"):
+    """Name of the per-repository Cloudsmith service: lowercase, hyphens, at most 64 characters."""
+    candidate = re.sub(r"[^a-z0-9]+", "-", f"{prefix}-{repository}".lower()).strip("-")
     if len(candidate) > 64:
         digest = hashlib.sha256(candidate.encode()).hexdigest()[:8]
         candidate = f"{candidate[:55].strip('-')}-{digest}"
@@ -43,7 +102,10 @@ def poetry_source_variable(repository):
 
 def identity(env):
     repository = env["GITHUB_REPOSITORY"].split("/", 1)[-1]
-    slug = service_slug(repository)
+    # Cloudsmith trusts the ci-bypass- identity only for a token with the
+    # cloudsmith-bypass environment claim, so a job outside that approved
+    # environment fails at authentication.
+    slug = service_slug(repository, "ci-bypass" if cooldown_bypass(env) else "ci-pull")
     with open(single_line(env["GITHUB_OUTPUT"]), "a", encoding="utf-8") as output:
         output.write(f"service-slug={slug}\n")
 
@@ -57,11 +119,25 @@ def configure(env):
         if repository and not SLUG.fullmatch(repository):
             raise ValueError("Invalid Cloudsmith repository slug.")
 
+    bypass = cooldown_bypass(env)
+    if bypass:
+        # The bypass identity can read only georgian-ci-bypass. Naming it keeps
+        # the bypass visible in the workflow diff.
+        if any(repository and repository != BYPASS_REPOSITORY for repository in (npm, python)):
+            raise ValueError(f"With cooldown-bypass, set each repository input to {BYPASS_REPOSITORY}.")
+        reason, packages = bypass_request(env)
+
     token = env["CLOUDSMITH_API_KEY"]
     if not TOKEN.fullmatch(token):
         raise ValueError("Invalid Cloudsmith credential format.")
     config_dir = Path(single_line(env["RUNNER_TEMP"])) / "cloudsmith"
     environment_file = single_line(env["GITHUB_ENV"])
+
+    if bypass:
+        bypass_record(
+            env, "Cloudsmith cooldown bypass", f"This approved job installs from {BYPASS_REPOSITORY}, skipping the cooldown, for",
+            reason, packages, "Approver: see this run's deployment review for the `cloudsmith-bypass` environment.",
+        )
 
     config_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     values = {}
@@ -106,11 +182,15 @@ def configure(env):
         output.writelines(f"{key}={value}\n" for key, value in values.items())
 
 
-COMMANDS = {"identity": identity, "configure": configure}
+COMMANDS = {"identity": identity, "configure": configure, "request": request}
 
 if __name__ == "__main__":
     try:
         COMMANDS[sys.argv[1]](os.environ)
-    except (ValueError, KeyError, IndexError):
+    except ValueError as error:
+        # Messages name the input that failed, never its value.
+        print(f"Cloudsmith setup failed: {error}", file=sys.stderr)
+        sys.exit(1)
+    except (KeyError, IndexError):
         print("Cloudsmith setup failed: invalid or missing input.", file=sys.stderr)
         sys.exit(1)
